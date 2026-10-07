@@ -1,0 +1,37 @@
+name: Ejecutar Bot de Alertas RSS
+
+on:
+  schedule:
+    # Se ejecuta automáticamente cada 2 horas
+    - cron: '0 */2 * * *'
+  workflow_dispatch: # Permite ejecutar manualmente con un botón
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar código del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar entorno Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Instalar librerías necesarias
+        run: |
+          python -m pip install --upgrade pip
+          pip install feedparser requests
+
+      - name: Ejecutar script de alertas
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python bot_alertas.py
+
+      - name: Guardar historial actualizado de noticias vistas
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add enlaces_vistos.json
+          git diff --quiet && git diff --staged --quiet || (git commit -m "update: historial de noticias procesadas" && git push)
