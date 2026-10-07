@@ -1,4 +1,5 @@
 import os
+from collections import defaultdict
 import requests
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -16,19 +17,30 @@ def generar_boletin():
         print("No hay noticias aprobadas esta semana.")
         return
 
-    lineas = ["🗞️ *BOLETÍN SEMANAL DE BECAS Y OPORTUNIDADES*\n"]
-    for idx, item in enumerate(aprobados, 1):
-        lineas.append(f"{idx}. *{item['titulo']}*")
-        lineas.append(f"🔗 {item['link']}\n")
+    # Agrupar las noticias aprobadas según su categoría
+    categorias = defaultdict(list)
+    for item in aprobados:
+        cat = item.get("categoria", "📌 NOVEDADES GENERALES")
+        categorias[cat].append(item)
 
-    lineas.append("_Compilado de Novedades Académicas y Profesionales_")
+    lineas = ["🗞️ *BOLETÍN SEMANAL DE BECAS Y OPORTUNIDADES*\n"]
+
+    for cat_nombre, items in categorias.items():
+        lineas.append(f"*{cat_nombre}*")
+        for item in items:
+            lineas.append(f"• *{item['titulo']}*")
+            lineas.append(f"  🔗 {item['link']}")
+        lineas.append("")
+
+    lineas.append("---\n_Compilado por la Gestión Estudiantil UTN_")
     mensaje_boletin = "\n".join(lineas)
 
     url_tg = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
         "chat_id": CHAT_ID,
         "text": mensaje_boletin,
-        "parse_mode": "Markdown"
+        "parse_mode": "Markdown",
+        "disable_web_page_preview": True
     }
     requests.post(url_tg, json=payload, timeout=10)
 
