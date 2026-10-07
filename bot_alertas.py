@@ -4,6 +4,7 @@ import time
 import re
 import unicodedata
 from datetime import datetime
+from urllib.parse import parse_qs, urlparse
 import feedparser
 import requests
 
@@ -30,6 +31,30 @@ PALABRAS_INCLUSION = [
     "práctica supervisada", "beca", "becas", "hackathon", "robotica", "robótica"
 ]
 
+def limpiar_url(url):
+    """Extrae la URL destino real eliminando el redireccionador de Google Alerts."""
+    if "google.com/url" in url:
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+        if "url" in params:
+            return params["url"][0]
+    return url
+
+def categorizar_noticia(titulo, resumen):
+    """Asigna automáticamente una categoría visual basada en palabras clave."""
+    texto = f"{titulo} {resumen}".lower()
+    if any(k in texto for k in ["beca", "becas", "posgrado", "financiamiento", "movilidad"]):
+        return "🎓 BECAS Y POSGRADOS"
+    elif any(k in texto for k in ["pasantia", "pasantía", "pps", "practica supervisada", "práctica supervisada", "jovenes profesionales"]):
+        return "💼 PASANTÍAS Y PPS"
+    elif any(k in texto for k in ["taller", "curso", "capacitacion", "capacitación", "certificacion", "certificación"]):
+        return "🛠️ TALLERES Y CURSOS"
+    elif any(k in texto for k in ["concurso", "hackathon", "competencia", "ideaton", "ideatón", "desafío"]):
+        return "🏆 CONCURSOS Y HACKATHONS"
+    elif any(k in texto for k in ["congreso", "jornada", "jornadas", "simposio", "call for papers", "seminario"]):
+        return "🏛️ CONGRESOS Y EVENTOS"
+    return "📌 NOVEDADES GENERALES"
+
 def normalizar_texto(texto):
     texto = texto.lower()
     texto = unicodedata.normalize('NFD', texto).encode('ascii', 'ignore').decode('utf-8')
@@ -54,9 +79,9 @@ def es_noticia_valida(titulo, resumen):
         return False
     return any(p in texto for p in PALABRAS_INCLUSION)
 
-def armar_borrador_whatsapp(titulo, resumen, link):
+def armar_borrador_whatsapp(titulo, resumen, link, categoria):
     return (
-        f"📢 *OPORTUNIDAD DETECTADA*\n\n"
+        f"{categoria}\n\n"
         f"📌 *{titulo}*\n\n"
         f"📝 {resumen}\n\n"
         f"🔗 {link}\n\n"
@@ -64,7 +89,7 @@ def armar_borrador_whatsapp(titulo, resumen, link):
         f"_Gestión Estudiantil / Novedades UTN_"
     )
 
-def guardar_en_sheets_inicial(fecha, titulo, borrador, link):
+def guardar_en_sheets_inicial(fecha, titulo, borrador, link, categoria):
     if not SHEETS_URL:
         return None
     payload = {
@@ -72,7 +97,8 @@ def guardar_en_sheets_inicial(fecha, titulo, borrador, link):
         "fecha": fecha,
         "titulo": titulo,
         "borrador": borrador,
-        "link": link
+        "link": link,
+        "categoria": categoria
     }
     try:
         r = requests.post(SHEETS_URL, json=payload, timeout=10)
@@ -88,6 +114,7 @@ def enviar_telegram_con_botones(borrador, row_id):
         "inline_keyboard": [
             [
                 {"text": "💾 Guardar", "callback_data": f"save_{row_id}"},
+                {"text": "🟩 Aprobar", "callback_data": f"appr_{row_id}"},
                 {"text": "❌ Descartar", "callback_data": f"disc_{row_id}"}
             ]
         ]
@@ -118,7 +145,7 @@ def main():
         try:
             feed = feedparser.parse(rss_url)
             for entry in feed.entries:
-                link = entry.link
+                link = limpiar_url(entry.link)
                 titulo = entry.title.replace("*", "")
                 resumen = entry.get("summary", "").replace("<b>", "").replace("</b>", "").replace("*", "")
                 titulo_norm = normalizar_texto(titulo)
@@ -131,8 +158,9 @@ def main():
                     vistos.add(titulo_norm)
 
                 if es_noticia_valida(titulo, resumen):
-                    borrador = armar_borrador_whatsapp(titulo, resumen, link)
-                    row_id = guardar_en_sheets_inicial(fecha_hoy, titulo, borrador, link)
+                    categoria = categorizar_noticia(titulo, resumen)
+                    borrador = armar_borrador_whatsapp(titulo, resumen, link, categoria)
+                    row_id = guardar_en_sheets_inicial(fecha_hoy, titulo, borrador, link, categoria)
                     if row_id:
                         enviar_telegram_con_botones(borrador, row_id)
                     time.sleep(1)
