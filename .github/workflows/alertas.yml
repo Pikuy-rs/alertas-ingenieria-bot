@@ -2,9 +2,8 @@ name: Ejecutar Bot de Alertas RSS
 
 on:
   schedule:
-    # Se ejecuta automáticamente cada 2 horas
     - cron: '0 */2 * * *'
-  workflow_dispatch: # Permite ejecutar manualmente con un botón
+  workflow_dispatch:
 
 jobs:
   run-bot:
@@ -27,6 +26,7 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GOOGLE_SHEETS_WEBAPP_URL: ${{ secrets.GOOGLE_SHEETS_WEBAPP_URL }}
         run: python bot_alertas.py
 
       - name: Guardar historial actualizado de noticias vistas
