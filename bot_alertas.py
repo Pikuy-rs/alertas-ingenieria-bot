@@ -1,6 +1,8 @@
 import os
 import json
 import time
+import re
+import unicodedata
 import feedparser
 import requests
 
@@ -27,6 +29,13 @@ PALABRAS_INCLUSION = [
     "práctica supervisada", "beca", "becas", "hackathon", "robotica", "robótica"
 ]
 
+def normalizar_texto(texto):
+    """Convierte a minúsculas, elimina acentos y caracteres especiales."""
+    texto = texto.lower()
+    texto = unicodedata.normalize('NFD', texto).encode('ascii', 'ignore').decode('utf-8')
+    texto = re.sub(r'[^a-z0-9]', '', texto)
+    return texto
+
 def cargar_historial():
     if os.path.exists(HISTORIAL_FILE):
         try:
@@ -43,11 +52,9 @@ def guardar_historial(vistos):
 def es_noticia_valida(titulo, resumen):
     texto_completo = f"{titulo} {resumen}".lower()
 
-    # Si contiene alguna palabra descartada, la filtramos
     if any(palabra in texto_completo for palabra in PALABRAS_EXCLUIDAS):
         return False
 
-    # Debe contener al menos una palabra de interés técnico/académico
     if any(palabra in texto_completo for palabra in PALABRAS_INCLUSION):
         return True
 
@@ -83,16 +90,24 @@ def main():
             feed = feedparser.parse(rss_url)
             for entry in feed.entries:
                 link = entry.link
-                if link not in vistos:
-                    vistos.add(link) # Marcar como vista para no reevaluar
-                    
-                    titulo = entry.title.replace("*", "")
-                    resumen = entry.get("summary", "").replace("<b>", "").replace("</b>", "").replace("*", "")
+                titulo = entry.title.replace("*", "")
+                resumen = entry.get("summary", "").replace("<b>", "").replace("</b>", "").replace("*", "")
 
-                    if es_noticia_valida(titulo, resumen):
-                        enviar_telegram(titulo, resumen, link)
-                        enviadas += 1
-                        time.sleep(1)
+                titulo_norm = normalizar_texto(titulo)
+
+                # Si ya vimos el enlace O el título normalizado, saltamos la noticia
+                if link in vistos or (titulo_norm and titulo_norm in vistos):
+                    continue
+
+                # Guardamos enlace y título en el historial para evitar futuras repeticiones
+                vistos.add(link)
+                if titulo_norm:
+                    vistos.add(titulo_norm)
+
+                if es_noticia_valida(titulo, resumen):
+                    enviar_telegram(titulo, resumen, link)
+                    enviadas += 1
+                    time.sleep(1)
         except Exception as e:
             print(f"Error procesando {rss_url}: {e}")
 
