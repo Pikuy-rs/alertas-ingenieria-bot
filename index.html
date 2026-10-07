@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Oportunidades & Becas | Gestión Estudiantil UTN</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen font-sans">
+  <header class="border-b border-slate-800 bg-slate-950/80 sticky top-0 backdrop-blur z-50">
+    <div class="max-w-5xl mx-auto px-4 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+      <div>
+        <h1 class="text-xl font-bold text-sky-400">Portal de Oportunidades</h1>
+        <p class="text-xs text-slate-400">Becas, Pasantías, PPS y Capacitaciones para Ingeniería</p>
+      </div>
+      <input type="text" id="search" placeholder="🔍 Buscar por palabra clave..." class="w-full sm:w-64 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-sky-500">
+    </div>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-4 py-8">
+    <!-- Filtros por categoría -->
+    <div id="filters" class="flex flex-wrap gap-2 mb-8">
+      <button onclick="filterCategory('TODOS')" class="filter-btn active bg-sky-600 text-white px-3 py-1.5 rounded-full text-xs font-medium hover:bg-sky-500 transition">Todas</button>
+      <button onclick="filterCategory('🎓 BECAS Y POSGRADOS')" class="filter-btn bg-slate-800 text-slate-300 px-3 py-1.5 rounded-full text-xs font-medium hover:bg-slate-700 transition">🎓 Becas</button>
+      <button onclick="filterCategory('💼 PASANTÍAS Y PPS')" class="filter-btn bg-slate-800 text-slate-300 px-3 py-1.5 rounded-full text-xs font-medium hover:bg-slate-700 transition">💼 Pasantías / PPS</button>
+      <button onclick="filterCategory('🛠️ TALLERES Y CURSOS')" class="filter-btn bg-slate-800 text-slate-300 px-3 py-1.5 rounded-full text-xs font-medium hover:bg-slate-700 transition">🛠️ Cursos</button>
+      <button onclick="filterCategory('🏆 CONCURSOS Y HACKATHONS')" class="filter-btn bg-slate-800 text-slate-300 px-3 py-1.5 rounded-full text-xs font-medium hover:bg-slate-700 transition">🏆 Concursos</button>
+    </div>
+
+    <!-- Grilla de Tarjetas -->
+    <div id="cards-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="col-span-full text-center py-12 text-slate-500">Cargando oportunidades activas...</div>
+    </div>
+  </main>
+
+  <script>
+    // Pegá aquí la URL de tu Google Apps Script
+    const API_URL = "https://script.google.com/macros/s/AKfycbznDTcyQRqjHnAYAPwsGswZhvKn1CoBgVQlFGcEJZj0mF3poFolAgicTiqa4LYrx_UkBg/exec";
+    let allNews = [];
+    let currentCategory = 'TODOS';
+
+    async function loadNews() {
+      try {
+        const res = await fetch(API_URL);
+        allNews = await res.json();
+        renderCards();
+      } catch (e) {
+        document.getElementById('cards-container').innerHTML = '<div class="col-span-full text-center text-red-400">Error cargando el boletín en vivo.</div>';
+      }
+    }
+
+    function renderCards() {
+      const search = document.getElementById('search').value.toLowerCase();
+      const container = document.getElementById('cards-container');
+      
+      const filtered = allNews.filter(item => {
+        const matchesCat = currentCategory === 'TODOS' || item.categoria === currentCategory;
+        const matchesSearch = item.titulo.toLowerCase().includes(search) || item.borrador.toLowerCase().includes(search);
+        return matchesCat && matchesSearch;
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = '<div class="col-span-full text-center py-12 text-slate-500">No se encontraron convocatorias para este filtro.</div>';
+        return;
+      }
+
+      container.innerHTML = filtered.map(item => `
+        <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-5 flex flex-col justify-between hover:border-slate-600 transition">
+          <div>
+            <span class="inline-block text-[10px] font-bold tracking-wider uppercase px-2.5 py-1 rounded bg-slate-700 text-sky-300 mb-3">${item.categoria}</span>
+            <h2 class="font-semibold text-slate-100 text-base mb-2">${item.titulo}</h2>
+          </div>
+          <div class="mt-4 pt-3 border-t border-slate-700/40 flex justify-between items-center">
+            <a href="${item.link}" target="_blank" rel="noopener" class="text-xs font-semibold text-sky-400 hover:text-sky-300 flex items-center gap-1">
+              Ver Convocatoria Directa ↗
+            </a>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function filterCategory(cat) {
+      currentCategory = cat;
+      renderCards();
+    }
+
+    document.getElementById('search').addEventListener('input', renderCards);
+    loadNews();
+  </script>
+</body>
+</html>
