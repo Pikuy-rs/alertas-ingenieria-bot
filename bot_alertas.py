@@ -3,15 +3,17 @@ import json
 import time
 import re
 import unicodedata
+from datetime import datetime
 import feedparser
 import requests
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+SHEETS_URL = os.environ.get("GOOGLE_SHEETS_WEBAPP_URL")
+
 HISTORIAL_FILE = "enlaces_vistos.json"
 RSS_FILE = "rss_urls.txt"
 
-# 1. PALABRAS QUE DESCARTAN LA NOTICIA AUTOMÁTICAMENTE
 PALABRAS_EXCLUIDAS = [
     "fotograf", "deport", "fútbol", "futbol", "poesía", "poesia", "teatro",
     "salud mental", "accidente", "policial", "violencia", "música", "musica",
@@ -19,7 +21,6 @@ PALABRAS_EXCLUIDAS = [
     "espectáculo", "vecinal", "tránsito", "homicidio", "robo", "hurto"
 ]
 
-# 2. PALABRAS QUE LA NOTICIA DEBE TENER SÍ O SÍ
 PALABRAS_INCLUSION = [
     "ingenieria", "ingeniería", "electronica", "electrónica", "sistemas",
     "software", "programacion", "programación", "hardware", "embebido",
@@ -30,11 +31,9 @@ PALABRAS_INCLUSION = [
 ]
 
 def normalizar_texto(texto):
-    """Convierte a minúsculas, elimina acentos y caracteres especiales."""
     texto = texto.lower()
     texto = unicodedata.normalize('NFD', texto).encode('ascii', 'ignore').decode('utf-8')
-    texto = re.sub(r'[^a-z0-9]', '', texto)
-    return texto
+    return re.sub(r'[^a-z0-9]', '', texto)
 
 def cargar_historial():
     if os.path.exists(HISTORIAL_FILE):
@@ -50,40 +49,70 @@ def guardar_historial(vistos):
         json.dump(list(vistos), f, ensure_ascii=False, indent=2)
 
 def es_noticia_valida(titulo, resumen):
-    texto_completo = f"{titulo} {resumen}".lower()
-
-    if any(palabra in texto_completo for palabra in PALABRAS_EXCLUIDAS):
+    texto = f"{titulo} {resumen}".lower()
+    if any(p in texto for p in PALABRAS_EXCLUIDAS):
         return False
+    return any(p in texto for p in PALABRAS_INCLUSION)
 
-    if any(palabra in texto_completo for palabra in PALABRAS_INCLUSION):
-        return True
+def armar_borrador_whatsapp(titulo, resumen, link):
+    return (
+        f"📢 *OPORTUNIDAD DETECTADA*\n\n"
+        f"📌 *{titulo}*\n\n"
+        f"📝 {resumen}\n\n"
+        f"🔗 {link}\n\n"
+        f"--\n"
+        f"_Gestión Estudiantil / Novedades UTN_"
+    )
 
-    return False
+def guardar_en_sheets_inicial(fecha, titulo, borrador, link):
+    if not SHEETS_URL:
+        return None
+    payload = {
+        "action": "noticia_nueva",
+        "fecha": fecha,
+        "titulo": titulo,
+        "borrador": borrador,
+        "link": link
+    }
+    try:
+        r = requests.post(SHEETS_URL, json=payload, timeout=10)
+        res = r.json()
+        return res.get("row_id")
+    except Exception as e:
+        print(f"Error registrando en Sheets: {e}")
+        return None
 
-def enviar_telegram(titulo, resumen, link):
-    mensaje = f"🔔 *NUEVA NOTICIA DETECTADA*\n\n📌 *{titulo}*\n\n📝 {resumen}\n\n🔗 {link}"
+def enviar_telegram_con_botones(borrador, row_id):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    reply_markup = {
+        "inline_keyboard": [
+            [
+                {"text": "💾 Guardar", "callback_data": f"save_{row_id}"},
+                {"text": "❌ Descartar", "callback_data": f"disc_{row_id}"}
+            ]
+        ]
+    }
     payload = {
         "chat_id": CHAT_ID,
-        "text": mensaje,
+        "text": borrador,
         "parse_mode": "Markdown",
-        "disable_web_page_preview": False
+        "disable_web_page_preview": False,
+        "reply_markup": reply_markup
     }
     try:
         requests.post(url, json=payload, timeout=10)
     except Exception as e:
-        print(f"Error al enviar a Telegram: {e}")
+        print(f"Error enviando a Telegram: {e}")
 
 def main():
     if not os.path.exists(RSS_FILE):
-        print("No se encontró el archivo rss_urls.txt")
         return
 
     with open(RSS_FILE, "r", encoding="utf-8") as f:
         rss_urls = [line.strip() for line in f if line.strip() and not line.startswith("#")]
 
     vistos = cargar_historial()
-    enviadas = 0
+    fecha_hoy = datetime.now().strftime("%Y-%m-%d")
 
     for rss_url in rss_urls:
         try:
@@ -92,27 +121,25 @@ def main():
                 link = entry.link
                 titulo = entry.title.replace("*", "")
                 resumen = entry.get("summary", "").replace("<b>", "").replace("</b>", "").replace("*", "")
-
                 titulo_norm = normalizar_texto(titulo)
 
-                # Si ya vimos el enlace O el título normalizado, saltamos la noticia
                 if link in vistos or (titulo_norm and titulo_norm in vistos):
                     continue
 
-                # Guardamos enlace y título en el historial para evitar futuras repeticiones
                 vistos.add(link)
                 if titulo_norm:
                     vistos.add(titulo_norm)
 
                 if es_noticia_valida(titulo, resumen):
-                    enviar_telegram(titulo, resumen, link)
-                    enviadas += 1
+                    borrador = armar_borrador_whatsapp(titulo, resumen, link)
+                    row_id = guardar_en_sheets_inicial(fecha_hoy, titulo, borrador, link)
+                    if row_id:
+                        enviar_telegram_con_botones(borrador, row_id)
                     time.sleep(1)
         except Exception as e:
             print(f"Error procesando {rss_url}: {e}")
 
     guardar_historial(vistos)
-    print(f"Proceso finalizado. Alertas enviadas a Telegram: {enviadas}")
 
 if __name__ == "__main__":
     main()
