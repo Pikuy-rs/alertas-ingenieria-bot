@@ -30,6 +30,12 @@ PALABRAS_INCLUSION = [
     "práctica supervisada", "beca", "becas", "hackathon", "robotica", "robótica"
 ]
 
+# Fuentes o convocatorias institucionales con auto-aprobación directa (Carril Rápido)
+PALABRAS_CONFIANZA_TOTAL = [
+    "beca ypf", "becas ypf", "beca balseiro", "pasantia utn", "pasantía utn",
+    "utn frt", "copit", "sidetec", "invap", "conae", "fórmula utn", "formula utn"
+]
+
 STOP_WORDS = {
     "de", "la", "que", "el", "en", "y", "a", "los", "del", "se", "las", "por", "un", "para", "con", "no", "una", "su", "al", "lo", "como", "mas", "pero", "sus", "le", "ya", "o", "este", "si", "porque", "esta", "entre", "cuando", "muy", "sin", "sobre", "tambien", "me", "hasta", "hay", "donde", "quien", "desde", "nos", "durante", "uno", "ni", "contra", "ese", "eso", "ante", "ellos", "e", "esto", "mi", "antes", "algunos", "unos", "yo", "otro", "otras", "otra", "otros"
 }
@@ -101,6 +107,11 @@ def es_noticia_valida(titulo, resumen):
         return False
     return any(p in texto for p in PALABRAS_INCLUSION)
 
+def es_confianza_total(titulo, resumen):
+    """Evalúa si la noticia proviene de una fuente/tema de auto-aprobación."""
+    texto = f"{titulo} {resumen}".lower()
+    return any(k in texto for k in PALABRAS_CONFIANZA_TOTAL)
+
 def armar_borrador_whatsapp(titulo, resumen, link, categoria):
     return (
         f"{categoria}\n\n"
@@ -125,7 +136,7 @@ def obtener_historial_desde_sheets():
         print(f"Error cargando historial desde Sheets: {e}")
         return set(), []
 
-def guardar_en_sheets_inicial(fecha, titulo, borrador, link, categoria, fecha_limite):
+def guardar_en_sheets_inicial(fecha, titulo, borrador, link, categoria, fecha_limite, estado="En Espera"):
     if not SHEETS_URL:
         return None
     payload = {
@@ -135,7 +146,8 @@ def guardar_en_sheets_inicial(fecha, titulo, borrador, link, categoria, fecha_li
         "borrador": borrador,
         "link": link,
         "categoria": categoria,
-        "fecha_limite": fecha_limite
+        "fecha_limite": fecha_limite,
+        "estado": estado
     }
     try:
         r = requests.post(SHEETS_URL, json=payload, timeout=10)
@@ -144,6 +156,19 @@ def guardar_en_sheets_inicial(fecha, titulo, borrador, link, categoria, fecha_li
     except Exception as e:
         print(f"Error registrando en Sheets: {e}")
         return None
+
+def enviar_telegram_simple(mensaje):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": mensaje,
+        "parse_mode": "Markdown",
+        "disable_web_page_preview": False
+    }
+    try:
+        requests.post(url, json=payload, timeout=10)
+    except Exception as e:
+        print(f"Error enviando mensaje simple a Telegram: {e}")
 
 def enviar_telegram_con_botones(borrador, row_id):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -175,7 +200,6 @@ def main():
     with open(RSS_FILE, "r", encoding="utf-8") as f:
         rss_urls = [line.strip() for line in f if line.strip() and not line.startswith("#")]
 
-    # Cargar historial centralizado desde Google Sheets
     vistos_links, vistos_titulos = obtener_historial_desde_sheets()
     fecha_hoy = datetime.now().strftime("%Y-%m-%d")
 
@@ -187,11 +211,9 @@ def main():
                 titulo = entry.title.replace("*", "")
                 resumen = entry.get("summary", "").replace("<b>", "").replace("</b>", "").replace("*", "")
 
-                # Validación de duplicado por enlace o por similitud semántica de título
                 if link in vistos_links or es_duplicado_por_similitud(titulo, vistos_titulos):
                     continue
 
-                # Registrar inmediatamente en memoria local durante la corrida
                 vistos_links.add(link)
                 vistos_titulos.append(titulo)
 
@@ -199,10 +221,18 @@ def main():
                     categoria = categorizar_noticia(titulo, resumen)
                     fecha_limite = extraer_fecha_limite(f"{titulo} {resumen}")
                     borrador = armar_borrador_whatsapp(titulo, resumen, link, categoria)
-                    
-                    row_id = guardar_en_sheets_inicial(fecha_hoy, titulo, borrador, link, categoria, fecha_limite)
-                    if row_id:
-                        enviar_telegram_con_botones(borrador, row_id)
+
+                    if es_confianza_total(titulo, resumen):
+                        # Carril Rápido: Estado Aprobado inmediato
+                        row_id = guardar_en_sheets_inicial(fecha_hoy, titulo, borrador, link, categoria, fecha_limite, estado="Aprobado")
+                        if row_id:
+                            mensaje_auto = f"⚡ *AUTO-APROBADA (CARRIL RÁPIDO)*\n\n{borrador}"
+                            enviar_telegram_simple(mensaje_auto)
+                    else:
+                        # Carril Normal: Estado En Espera
+                        row_id = guardar_en_sheets_inicial(fecha_hoy, titulo, borrador, link, categoria, fecha_limite, estado="En Espera")
+                        if row_id:
+                            enviar_telegram_con_botones(borrador, row_id)
                     time.sleep(1)
         except Exception as e:
             print(f"Error procesando {rss_url}: {e}")
