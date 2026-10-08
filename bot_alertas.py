@@ -21,16 +21,25 @@ PALABRAS_EXCLUIDAS = [
     "espectáculo", "vecinal", "tránsito", "homicidio", "robo", "hurto"
 ]
 
-PALABRAS_INCLUSION = [
-    "ingenieria", "ingeniería", "electronica", "electrónica", "sistemas",
-    "software", "programacion", "programación", "hardware", "embebido",
-    "embebidos", "iot", "telecomunicaciones", "ciberseguridad", "inteligencia artificial",
-    "datos", "utn", "facet", "copit", "sidetec", "ieee", "balseiro",
-    "conae", "invap", "pasantia", "pasantía", "pps", "practica supervisada",
-    "práctica supervisada", "beca", "becas", "hackathon", "robotica", "robótica"
+# FACTOR 1: Debe ser explícitamente una oportunidad
+PALABRAS_OPORTUNIDAD = [
+    "beca", "becas", "pasantia", "pasantía", "pps", "practica supervisada",
+    "práctica supervisada", "convocatoria", "inscripcion", "inscripción",
+    "taller", "curso", "capacitacion", "capacitación", "hackathon", "concurso",
+    "empleo", "busqueda laboral", "búsqueda laboral", "jovenes profesionales",
+    "jóvenes profesionales", "bootcamp", "seminario", "webinar", "voluntariado",
+    "financiamiento", "subsidio", "movilidad"
 ]
 
-# Fuentes o convocatorias institucionales con auto-aprobación directa (Carril Rápido)
+# FACTOR 2: Debe ser de nuestra área académica o de nuestro ecosistema
+PALABRAS_AREA = [
+    "ingenieria", "ingeniería", "electronica", "electrónica", "sistemas",
+    "software", "hardware", "embebido", "embebidos", "iot", "telecomunicaciones",
+    "ciberseguridad", "inteligencia artificial", "datos", "utn", "facet",
+    "copit", "sidetec", "ieee", "balseiro", "conae", "invap"
+]
+
+# Fuentes de auto-aprobación directa (Carril Rápido)
 PALABRAS_CONFIANZA_TOTAL = [
     "beca ypf", "becas ypf", "beca balseiro", "pasantia utn", "pasantía utn",
     "utn frt", "copit", "sidetec", "invap", "conae", "fórmula utn", "formula utn"
@@ -41,34 +50,28 @@ STOP_WORDS = {
 }
 
 def limpiar_url(url):
-    """Extrae la URL destino real y quita parámetros de rastreo."""
     if "google.com/url" in url:
         parsed = urlparse(url)
         params = parse_qs(parsed.query)
         if "url" in params:
             url = params["url"][0]
-    
     parsed = urlparse(url)
     return urlunparse((parsed.scheme, parsed.netloc, parsed.path, '', '', ''))
 
 def extraer_palabras_clave(texto):
-    """Retorna un conjunto de palabras clave significativas (sin conectores ni acentos)."""
     texto = texto.lower()
     texto = unicodedata.normalize('NFD', texto).encode('ascii', 'ignore').decode('utf-8')
     palabras = re.findall(r'\b[a-z0-9]{3,}\b', texto)
     return set(p for p in palabras if p not in STOP_WORDS)
 
 def es_duplicado_por_similitud(titulo_nuevo, lista_titulos_existentes):
-    """Evalúa si el título nuevo comparte más del 70% de palabras clave con alguno existente."""
     kw_nuevo = extraer_palabras_clave(titulo_nuevo)
     if not kw_nuevo:
         return False
-
     for t_existente in lista_titulos_existentes:
         kw_existente = extraer_palabras_clave(t_existente)
         if not kw_existente:
             continue
-        
         interseccion = kw_nuevo.intersection(kw_existente)
         similitud = len(interseccion) / max(len(kw_nuevo), len(kw_existente))
         if similitud >= 0.7:
@@ -103,12 +106,18 @@ def extraer_fecha_limite(texto):
 
 def es_noticia_valida(titulo, resumen):
     texto = f"{titulo} {resumen}".lower()
+    
+    # 1. Descarte inmediato por spam o temas irrelevantes
     if any(p in texto for p in PALABRAS_EXCLUIDAS):
         return False
-    return any(p in texto for p in PALABRAS_INCLUSION)
+        
+    # 2. REGLA ESTRICTA DE DOBLE FACTOR: Debe tener OPORTUNIDAD y ÁREA obligatoriamente
+    tiene_oportunidad = any(p in texto for p in PALABRAS_OPORTUNIDAD)
+    tiene_area = any(p in texto for p in PALABRAS_AREA)
+    
+    return tiene_oportunidad and tiene_area
 
 def es_confianza_total(titulo, resumen):
-    """Evalúa si la noticia proviene de una fuente/tema de auto-aprobación."""
     texto = f"{titulo} {resumen}".lower()
     return any(k in texto for k in PALABRAS_CONFIANZA_TOTAL)
 
@@ -123,7 +132,6 @@ def armar_borrador_whatsapp(titulo, resumen, link, categoria):
     )
 
 def obtener_historial_desde_sheets():
-    """Descarga todo el historial almacenado en la planilla de Google."""
     if not SHEETS_URL:
         return set(), []
     try:
@@ -223,13 +231,11 @@ def main():
                     borrador = armar_borrador_whatsapp(titulo, resumen, link, categoria)
 
                     if es_confianza_total(titulo, resumen):
-                        # Carril Rápido: Estado Aprobado inmediato
                         row_id = guardar_en_sheets_inicial(fecha_hoy, titulo, borrador, link, categoria, fecha_limite, estado="Aprobado")
                         if row_id:
                             mensaje_auto = f"⚡ *AUTO-APROBADA (CARRIL RÁPIDO)*\n\n{borrador}"
                             enviar_telegram_simple(mensaje_auto)
                     else:
-                        # Carril Normal: Estado En Espera
                         row_id = guardar_en_sheets_inicial(fecha_hoy, titulo, borrador, link, categoria, fecha_limite, estado="En Espera")
                         if row_id:
                             enviar_telegram_con_botones(borrador, row_id)
