@@ -4,7 +4,7 @@ import time
 import re
 import unicodedata
 from datetime import datetime
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse, urlunparse
 import feedparser
 import requests
 
@@ -12,7 +12,6 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 SHEETS_URL = os.environ.get("GOOGLE_SHEETS_WEBAPP_URL")
 
-HISTORIAL_FILE = "enlaces_vistos.json"
 RSS_FILE = "rss_urls.txt"
 
 PALABRAS_EXCLUIDAS = [
@@ -31,17 +30,46 @@ PALABRAS_INCLUSION = [
     "práctica supervisada", "beca", "becas", "hackathon", "robotica", "robótica"
 ]
 
+STOP_WORDS = {
+    "de", "la", "que", "el", "en", "y", "a", "los", "del", "se", "las", "por", "un", "para", "con", "no", "una", "su", "al", "lo", "como", "mas", "pero", "sus", "le", "ya", "o", "este", "si", "porque", "esta", "entre", "cuando", "muy", "sin", "sobre", "tambien", "me", "hasta", "hay", "donde", "quien", "desde", "nos", "durante", "uno", "ni", "contra", "ese", "eso", "ante", "ellos", "e", "esto", "mi", "antes", "algunos", "unos", "yo", "otro", "otras", "otra", "otros"
+}
+
 def limpiar_url(url):
-    """Extrae la URL destino real eliminando el redireccionador de Google Alerts."""
+    """Extrae la URL destino real y quita parámetros de rastreo."""
     if "google.com/url" in url:
         parsed = urlparse(url)
         params = parse_qs(parsed.query)
         if "url" in params:
-            return params["url"][0]
-    return url
+            url = params["url"][0]
+    
+    parsed = urlparse(url)
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, '', '', ''))
+
+def extraer_palabras_clave(texto):
+    """Retorna un conjunto de palabras clave significativas (sin conectores ni acentos)."""
+    texto = texto.lower()
+    texto = unicodedata.normalize('NFD', texto).encode('ascii', 'ignore').decode('utf-8')
+    palabras = re.findall(r'\b[a-z0-9]{3,}\b', texto)
+    return set(p for p in palabras if p not in STOP_WORDS)
+
+def es_duplicado_por_similitud(titulo_nuevo, lista_titulos_existentes):
+    """Evalúa si el título nuevo comparte más del 70% de palabras clave con alguno existente."""
+    kw_nuevo = extraer_palabras_clave(titulo_nuevo)
+    if not kw_nuevo:
+        return False
+
+    for t_existente in lista_titulos_existentes:
+        kw_existente = extraer_palabras_clave(t_existente)
+        if not kw_existente:
+            continue
+        
+        interseccion = kw_nuevo.intersection(kw_existente)
+        similitud = len(interseccion) / max(len(kw_nuevo), len(kw_existente))
+        if similitud >= 0.7:
+            return True
+    return False
 
 def categorizar_noticia(titulo, resumen):
-    """Asigna automáticamente una categoría visual basada en palabras clave."""
     texto = f"{titulo} {resumen}".lower()
     if any(k in texto for k in ["beca", "becas", "posgrado", "financiamiento", "movilidad"]):
         return "🎓 BECAS Y POSGRADOS"
@@ -55,23 +83,17 @@ def categorizar_noticia(titulo, resumen):
         return "🏛️ CONGRESOS Y EVENTOS"
     return "📌 NOVEDADES GENERALES"
 
-def normalizar_texto(texto):
-    texto = texto.lower()
-    texto = unicodedata.normalize('NFD', texto).encode('ascii', 'ignore').decode('utf-8')
-    return re.sub(r'[^a-z0-9]', '', texto)
-
-def cargar_historial():
-    if os.path.exists(HISTORIAL_FILE):
-        try:
-            with open(HISTORIAL_FILE, "r", encoding="utf-8") as f:
-                return set(json.load(f))
-        except Exception:
-            return set()
-    return set()
-
-def guardar_historial(vistos):
-    with open(HISTORIAL_FILE, "w", encoding="utf-8") as f:
-        json.dump(list(vistos), f, ensure_ascii=False, indent=2)
+def extraer_fecha_limite(texto):
+    patrones = [
+        r'(?:hasta|cierra|vence|límite|limite)\s+(?:el\s+)?(\d{1,2}[\/\.-]\d{1,2}(?:[\/\.-]\d{2,4})?)',
+        r'(?:hasta|cierra|vence|límite|limite)\s+(?:el\s+)?(\d{1,2}\s+de\s+[a-zA-Z]+)',
+    ]
+    texto_lower = texto.lower()
+    for pat in patrones:
+        match = re.search(pat, texto_lower)
+        if match:
+            return match.group(1).title()
+    return "Sin fecha detectada"
 
 def es_noticia_valida(titulo, resumen):
     texto = f"{titulo} {resumen}".lower()
@@ -89,7 +111,21 @@ def armar_borrador_whatsapp(titulo, resumen, link, categoria):
         f"_Gestión Estudiantil / Novedades UTN_"
     )
 
-def guardar_en_sheets_inicial(fecha, titulo, borrador, link, categoria):
+def obtener_historial_desde_sheets():
+    """Descarga todo el historial almacenado en la planilla de Google."""
+    if not SHEETS_URL:
+        return set(), []
+    try:
+        res = requests.get(f"{SHEETS_URL}?action=obtener_historial", timeout=10)
+        data = res.json()
+        links = set(l.lower() for l in data.get("links", []))
+        titulos = data.get("titulos", [])
+        return links, titulos
+    except Exception as e:
+        print(f"Error cargando historial desde Sheets: {e}")
+        return set(), []
+
+def guardar_en_sheets_inicial(fecha, titulo, borrador, link, categoria, fecha_limite):
     if not SHEETS_URL:
         return None
     payload = {
@@ -98,7 +134,8 @@ def guardar_en_sheets_inicial(fecha, titulo, borrador, link, categoria):
         "titulo": titulo,
         "borrador": borrador,
         "link": link,
-        "categoria": categoria
+        "categoria": categoria,
+        "fecha_limite": fecha_limite
     }
     try:
         r = requests.post(SHEETS_URL, json=payload, timeout=10)
@@ -138,7 +175,8 @@ def main():
     with open(RSS_FILE, "r", encoding="utf-8") as f:
         rss_urls = [line.strip() for line in f if line.strip() and not line.startswith("#")]
 
-    vistos = cargar_historial()
+    # Cargar historial centralizado desde Google Sheets
+    vistos_links, vistos_titulos = obtener_historial_desde_sheets()
     fecha_hoy = datetime.now().strftime("%Y-%m-%d")
 
     for rss_url in rss_urls:
@@ -148,26 +186,26 @@ def main():
                 link = limpiar_url(entry.link)
                 titulo = entry.title.replace("*", "")
                 resumen = entry.get("summary", "").replace("<b>", "").replace("</b>", "").replace("*", "")
-                titulo_norm = normalizar_texto(titulo)
 
-                if link in vistos or (titulo_norm and titulo_norm in vistos):
+                # Validación de duplicado por enlace o por similitud semántica de título
+                if link in vistos_links or es_duplicado_por_similitud(titulo, vistos_titulos):
                     continue
 
-                vistos.add(link)
-                if titulo_norm:
-                    vistos.add(titulo_norm)
+                # Registrar inmediatamente en memoria local durante la corrida
+                vistos_links.add(link)
+                vistos_titulos.append(titulo)
 
                 if es_noticia_valida(titulo, resumen):
                     categoria = categorizar_noticia(titulo, resumen)
+                    fecha_limite = extraer_fecha_limite(f"{titulo} {resumen}")
                     borrador = armar_borrador_whatsapp(titulo, resumen, link, categoria)
-                    row_id = guardar_en_sheets_inicial(fecha_hoy, titulo, borrador, link, categoria)
+                    
+                    row_id = guardar_en_sheets_inicial(fecha_hoy, titulo, borrador, link, categoria, fecha_limite)
                     if row_id:
                         enviar_telegram_con_botones(borrador, row_id)
                     time.sleep(1)
         except Exception as e:
             print(f"Error procesando {rss_url}: {e}")
-
-    guardar_historial(vistos)
 
 if __name__ == "__main__":
     main()
