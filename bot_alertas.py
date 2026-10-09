@@ -14,24 +14,27 @@ SHEETS_URL = os.environ.get("GOOGLE_SHEETS_WEBAPP_URL")
 
 RSS_FILE = "rss_urls.txt"
 
+# Exclusiones de contexto e industrias no relevantes
 PALABRAS_EXCLUIDAS = [
     "fotograf", "deport", "fútbol", "futbol", "poesía", "poesia", "teatro",
     "salud mental", "accidente", "policial", "violencia", "música", "musica",
     "literario", "escultura", "danza", "legislativo", "carnaval", "farándula",
-    "espectáculo", "vecinal", "tránsito", "homicidio", "robo", "hurto"
+    "espectáculo", "vecinal", "tránsito", "homicidio", "robo", "hurto",
+    "curso legal", "en el curso de", "tomó su curso", "curso de las acciones",
+    "bolsa de comercio", "dólar", "dolar", "cripto", "bitcoin"
 ]
 
-# FACTOR 1: Debe ser explícitamente una oportunidad
+# FACTOR 1: Oportunidad explícita (sustantivo directo)
 PALABRAS_OPORTUNIDAD = [
     "beca", "becas", "pasantia", "pasantía", "pps", "practica supervisada",
     "práctica supervisada", "convocatoria", "inscripcion", "inscripción",
     "taller", "curso", "capacitacion", "capacitación", "hackathon", "concurso",
-    "empleo", "busqueda laboral", "búsqueda laboral", "jovenes profesionales",
-    "jóvenes profesionales", "bootcamp", "seminario", "webinar", "voluntariado",
+    "busqueda laboral", "búsqueda laboral", "jovenes profesionales",
+    "jóvenes profesionales", "bootcamp", "seminario", "webinar",
     "financiamiento", "subsidio", "movilidad"
 ]
 
-# FACTOR 2: Debe ser de nuestra área académica o de nuestro ecosistema
+# FACTOR 2: Ámbito o disciplina
 PALABRAS_AREA = [
     "ingenieria", "ingeniería", "electronica", "electrónica", "sistemas",
     "software", "hardware", "embebido", "embebidos", "iot", "telecomunicaciones",
@@ -39,7 +42,7 @@ PALABRAS_AREA = [
     "copit", "sidetec", "ieee", "balseiro", "conae", "invap"
 ]
 
-# Fuentes de auto-aprobación directa (Carril Rápido)
+# Carril Rápido (Auto-Aprobado)
 PALABRAS_CONFIANZA_TOTAL = [
     "beca ypf", "becas ypf", "beca balseiro", "pasantia utn", "pasantía utn",
     "utn frt", "copit", "sidetec", "invap", "conae", "fórmula utn", "formula utn"
@@ -48,6 +51,11 @@ PALABRAS_CONFIANZA_TOTAL = [
 STOP_WORDS = {
     "de", "la", "que", "el", "en", "y", "a", "los", "del", "se", "las", "por", "un", "para", "con", "no", "una", "su", "al", "lo", "como", "mas", "pero", "sus", "le", "ya", "o", "este", "si", "porque", "esta", "entre", "cuando", "muy", "sin", "sobre", "tambien", "me", "hasta", "hay", "donde", "quien", "desde", "nos", "durante", "uno", "ni", "contra", "ese", "eso", "ante", "ellos", "e", "esto", "mi", "antes", "algunos", "unos", "yo", "otro", "otras", "otra", "otros"
 }
+
+def limpiar_coletillas_titulo(titulo):
+    """Elimina el nombre del medio al final del título (ej: 'Noticia - Diario X' -> 'Noticia')."""
+    titulo_limpio = re.sub(r'\s*[\-\|]\s*.*$', '', titulo)
+    return titulo_limpio.strip()
 
 def limpiar_url(url):
     if "google.com/url" in url:
@@ -65,16 +73,24 @@ def extraer_palabras_clave(texto):
     return set(p for p in palabras if p not in STOP_WORDS)
 
 def es_duplicado_por_similitud(titulo_nuevo, lista_titulos_existentes):
-    kw_nuevo = extraer_palabras_clave(titulo_nuevo)
+    # Compara usando el título sin coletillas de medios
+    t_nuevo_limpio = limpiar_coletillas_titulo(titulo_nuevo)
+    kw_nuevo = extraer_palabras_clave(t_nuevo_limpio)
+    
     if not kw_nuevo:
         return False
+
     for t_existente in lista_titulos_existentes:
-        kw_existente = extraer_palabras_clave(t_existente)
+        t_existente_limpio = limpiar_coletillas_titulo(t_existente)
+        kw_existente = extraer_palabras_clave(t_existente_limpio)
         if not kw_existente:
             continue
+        
         interseccion = kw_nuevo.intersection(kw_existente)
         similitud = len(interseccion) / max(len(kw_nuevo), len(kw_existente))
-        if similitud >= 0.7:
+        
+        # Umbral ajustado al 55% para atrapar paráfrasis
+        if similitud >= 0.55:
             return True
     return False
 
@@ -107,11 +123,9 @@ def extraer_fecha_limite(texto):
 def es_noticia_valida(titulo, resumen):
     texto = f"{titulo} {resumen}".lower()
     
-    # 1. Descarte inmediato por spam o temas irrelevantes
     if any(p in texto for p in PALABRAS_EXCLUIDAS):
         return False
         
-    # 2. REGLA ESTRICTA DE DOBLE FACTOR: Debe tener OPORTUNIDAD y ÁREA obligatoriamente
     tiene_oportunidad = any(p in texto for p in PALABRAS_OPORTUNIDAD)
     tiene_area = any(p in texto for p in PALABRAS_AREA)
     
@@ -122,9 +136,10 @@ def es_confianza_total(titulo, resumen):
     return any(k in texto for k in PALABRAS_CONFIANZA_TOTAL)
 
 def armar_borrador_whatsapp(titulo, resumen, link, categoria):
+    titulo_limpio = limpiar_coletillas_titulo(titulo)
     return (
         f"{categoria}\n\n"
-        f"📌 *{titulo}*\n\n"
+        f"📌 *{titulo_limpio}*\n\n"
         f"📝 {resumen}\n\n"
         f"🔗 {link}\n\n"
         f"--\n"
@@ -223,20 +238,21 @@ def main():
                     continue
 
                 vistos_links.add(link)
-                vistos_titulos.append(titulo)
+                vistos_titulos.append(limpiar_coletillas_titulo(titulo))
 
                 if es_noticia_valida(titulo, resumen):
                     categoria = categorizar_noticia(titulo, resumen)
                     fecha_limite = extraer_fecha_limite(f"{titulo} {resumen}")
-                    borrador = armar_borrador_whatsapp(titulo, resumen, link, categoria)
+                    titulo_limpio = limpiar_coletillas_titulo(titulo)
+                    borrador = armar_borrador_whatsapp(titulo_limpio, resumen, link, categoria)
 
                     if es_confianza_total(titulo, resumen):
-                        row_id = guardar_en_sheets_inicial(fecha_hoy, titulo, borrador, link, categoria, fecha_limite, estado="Aprobado")
+                        row_id = guardar_en_sheets_inicial(fecha_hoy, titulo_limpio, borrador, link, categoria, fecha_limite, estado="Aprobado")
                         if row_id:
                             mensaje_auto = f"⚡ *AUTO-APROBADA (CARRIL RÁPIDO)*\n\n{borrador}"
                             enviar_telegram_simple(mensaje_auto)
                     else:
-                        row_id = guardar_en_sheets_inicial(fecha_hoy, titulo, borrador, link, categoria, fecha_limite, estado="En Espera")
+                        row_id = guardar_en_sheets_inicial(fecha_hoy, titulo_limpio, borrador, link, categoria, fecha_limite, estado="En Espera")
                         if row_id:
                             enviar_telegram_con_botones(borrador, row_id)
                     time.sleep(1)
