@@ -25,24 +25,40 @@ PALABRAS_EXCLUIDAS = [
     "paro docente", "paro general", "huelga", "despidos", "indec", "plan social"
 ]
 
-# FACTOR 1: Oportunidad académica, formativa o búsqueda laboral concreta
+# FACTOR 1: Oportunidad académica, formativa, laboral o instrumento de fomento/financiamiento
 PALABRAS_OPORTUNIDAD = [
     # Becas y formación
     "beca", "becas", "convocatoria", "inscripcion", "inscripción",
     "taller", "curso", "capacitacion", "capacitación", "hackathon", "concurso",
-    "bootcamp", "seminario", "webinar", "financiamiento", "subsidio", "movilidad",
-    "proyecto de investigacion", "proyecto de investigación", "incubadora", "aceleradora",
+    "bootcamp", "seminario", "webinar", "movilidad",
     # Empleo, pasantías y reclutamiento
     "empleo", "empleos", "pasantia", "pasantía", "pps", "practica supervisada",
     "práctica supervisada", "busqueda laboral", "búsqueda laboral",
     "oferta laboral", "ofertas laborales", "vacante", "vacantes",
     "se busca", "incorporara", "incorporará", "seleccionara", "seleccionará",
     "cv", "curriculum", "currículum", "postularse", "postulacion", "postulación",
-    "jovenes profesionales", "jóvenes profesionales", "personal tecnico", "personal técnico"
+    "jovenes profesionales", "jóvenes profesionales", "personal tecnico", "personal técnico",
+    # Fomento, startups e inversión (Economía del Conocimiento)
+    "financiamiento", "subsidio", "aportes no reembolsables", "anr",
+    "credito fiscal", "crédito fiscal", "fomento", "incubadora", "incubacion",
+    "incubación", "aceleradora", "aceleracion", "aceleración", "emprendedores",
+    "ronda de negocios", "proyecto de investigacion", "proyecto de investigación",
+    "proyecto tecnologico", "proyecto tecnológico", "registro nacional"
 ]
 
-# FACTOR 2: Especialidades (Ingenierías, Tecnicaturas, IA, Industria, Seguridad e Higiene)
+# FACTOR 2: Especialidades (Ingenierías, Tecnicaturas, IA, Industria, Economía del Conocimiento)
 PALABRAS_AREA = [
+    # Economía del Conocimiento e Innovación
+    "economia del conocimiento", "economía del conocimiento",
+    "ley de economia del conocimiento", "ley de economía del conocimiento",
+    "industria del conocimiento", "servicios basados en el conocimiento",
+    "biotecnologia", "biotecnología", "biotech", "nanotecnologia", "nanotecnología",
+    "fintech", "edtech", "agtech", "govtech", "healthtech", "videojuegos",
+    "industria 4.0", "transformacion digital", "transformación digital",
+    "innovacion tecnologica", "innovación tecnológica", "transferencia tecnologica",
+    "transferencia tecnológica", "i+d", "investigacion y desarrollo",
+    "investigación y desarrollo", "startup", "startups", "base tecnologica",
+    "base tecnológica", "cluster tecnologico", "clúster tecnológico",
     # Perfiles generales
     "ingenieria", "ingeniería", "ingeniero", "ingeniera", "ingenieros",
     "tecnico", "técnico", "tecnica", "técnica", "tecnicos", "técnicos", "tecnicatura",
@@ -81,6 +97,9 @@ PALABRAS_TUCUMAN = [
     "utn frt", "utn-frt", "facultad regional tucuman", "facultad regional tucumán",
     "unt", "universidad nacional de tucuman", "universidad nacional de tucumán",
     "facet", "unsta", "uspt", "copit", "sidetec", "colegio de ingenieros",
+    "idep", "instituto de desarrollo productivo", "seciti",
+    "cluster tecnologico tucuman", "clúster tecnológico tucumán",
+    "polo tecnologico tucuman", "polo tecnológico tucumán",
     "conicet tucuman", "conicet tucumán", "cerela", "proimi", "insibio",
     "inbiofal", "inta famailla", "inta famaillá", "eeaoc",
     "yerba buena", "tafi viejo", "tafí viejo", "banda del rio sali",
@@ -90,8 +109,9 @@ PALABRAS_TUCUMAN = [
 
 # Carril Rápido (Auto-Aprobado directo si cumple los 3 factores y viene de fuentes locales clave)
 PALABRAS_CONFIANZA_TOTAL = [
-    "utn frt", "utn-frt", "facet", "sidetec", "copit", "conicet tucuman",
-    "conicet tucumán", "beca ypf", "becas ypf"
+    "utn frt", "utn-frt", "facet", "sidetec", "copit", "idep",
+    "cluster tecnologico tucuman", "clúster tecnológico tucumán",
+    "conicet tucuman", "conicet tucumán", "beca ypf", "becas ypf"
 ]
 
 STOP_WORDS = {
@@ -157,8 +177,10 @@ def categorizar_noticia(titulo, resumen):
         return "💼 PASANTÍAS Y PPS"
     elif any(k in texto for k in ["empleo", "busqueda laboral", "oferta laboral", "vacante", "se busca", "cv", "curriculum", "jovenes profesionales", "personal tecnico"]):
         return "🔍 EMPLEOS Y BÚSQUEDAS"
-    elif any(k in texto for k in ["beca", "becas", "posgrado", "financiamiento", "movilidad"]):
+    elif any(k in texto for k in ["beca", "becas", "posgrado", "movilidad"]):
         return "🎓 BECAS Y POSGRADOS"
+    elif any(k in texto for k in ["economia del conocimiento", "biotecnologia", "fintech", "agtech", "startup", "incubadora", "aceleradora", "aportes no reembolsables", "anr", "credito fiscal", "i+d", "industria 4.0", "cluster tecnologico"]):
+        return "💡 ECONOMÍA DEL CONOCIMIENTO"
     elif any(k in texto for k in ["taller", "curso", "capacitacion", "certificacion", "bootcamp"]):
         return "🛠️ TALLERES Y CURSOS"
     elif any(k in texto for k in ["concurso", "hackathon", "competencia", "ideaton", "desafio"]):
@@ -186,7 +208,7 @@ def es_noticia_valida(titulo, resumen):
     if any(normalizar_texto(p) in texto_norm for p in PALABRAS_EXCLUIDAS):
         return False
         
-    # 2. TRIPLE FACTOR OBLIGATORIO: Oportunidad/Empleo + Especialidad Técnica + Tucumán
+    # 2. TRIPLE FACTOR OBLIGATORIO: Oportunidad/Fomento + Especialidad/Econ. Conocimiento + Tucumán
     tiene_oportunidad = contiene_termino_exacto(texto_norm, PALABRAS_OPORTUNIDAD)
     tiene_area = contiene_termino_exacto(texto_norm, PALABRAS_AREA)
     es_tucuman = contiene_termino_exacto(texto_norm, PALABRAS_TUCUMAN)
