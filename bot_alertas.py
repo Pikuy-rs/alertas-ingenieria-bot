@@ -1,5 +1,4 @@
 import os
-import json
 import time
 import re
 import unicodedata
@@ -21,39 +20,76 @@ PALABRAS_EXCLUIDAS = [
     "literario", "escultura", "danza", "legislativo", "carnaval", "farándula",
     "espectáculo", "vecinal", "tránsito", "homicidio", "robo", "hurto",
     "curso legal", "en el curso de", "tomó su curso", "curso de las acciones",
-    "bolsa de comercio", "dólar", "dolar", "cripto", "bitcoin"
+    "bolsa de comercio", "dólar", "dolar", "cripto", "bitcoin", "horóscopo"
 ]
 
-# FACTOR 1: Oportunidad explícita (sustantivo directo)
+# FACTOR 1: Debe ser explícitamente una oportunidad o actividad formativa/laboral
 PALABRAS_OPORTUNIDAD = [
     "beca", "becas", "pasantia", "pasantía", "pps", "practica supervisada",
     "práctica supervisada", "convocatoria", "inscripcion", "inscripción",
     "taller", "curso", "capacitacion", "capacitación", "hackathon", "concurso",
     "busqueda laboral", "búsqueda laboral", "jovenes profesionales",
     "jóvenes profesionales", "bootcamp", "seminario", "webinar",
-    "financiamiento", "subsidio", "movilidad"
+    "financiamiento", "subsidio", "movilidad", "proyecto de investigacion",
+    "proyecto de investigación", "incubadora", "aceleradora"
 ]
 
-# FACTOR 2: Ámbito o disciplina
+# FACTOR 2: Nicho técnico (IA, Electrónica, Sistemas Embebidos, Hardware, Software)
 PALABRAS_AREA = [
-    "ingenieria", "ingeniería", "electronica", "electrónica", "sistemas",
-    "software", "hardware", "embebido", "embebidos", "iot", "telecomunicaciones",
-    "ciberseguridad", "inteligencia artificial", "datos", "utn", "facet",
-    "copit", "sidetec", "ieee", "balseiro", "conae", "invap"
+    # Inteligencia Artificial y Datos
+    "ia", "inteligencia artificial", "machine learning", "deep learning",
+    "vision artificial", "visión artificial", "redes neuronales", "llm",
+    "ciencia de datos", "analisis de datos", "análisis de datos",
+    # Electrónica y Sistemas Embebidos
+    "electronica", "electrónica", "sistemas embebidos", "embebido", "embebidos",
+    "microcontrolador", "microcontroladores", "esp32", "stm32", "arduino",
+    "fpga", "pcb", "firmware", "vhdl", "verilog", "hardware", "iot",
+    "internet de las cosas", "automatizacion", "automatización", "robotica",
+    "robótica", "telecomunicaciones", "sensores", "instrumentacion",
+    "instrumentación", "energia renovable", "energías renovables",
+    # Ingeniería y Desarrollo
+    "ingenieria", "ingeniería", "sistemas", "software", "programacion",
+    "programación", "ciberseguridad"
 ]
 
-# Carril Rápido (Auto-Aprobado)
+# FACTOR 3: Candado Geográfico Estricto (Solo Tucumán e instituciones locales)
+PALABRAS_TUCUMAN = [
+    "tucuman", "tucumán", "san miguel de tucuman", "san miguel de tucumán",
+    "utn frt", "utn-frt", "facultad regional tucuman", "facultad regional tucumán",
+    "unt", "universidad nacional de tucuman", "universidad nacional de tucumán",
+    "facet", "unsta", "uspt", "copit", "sidetec",
+    "conicet tucuman", "conicet tucumán", "cerela", "proimi", "insibio",
+    "inbiofal", "inta famailla", "inta famaillá", "eeaoc",
+    "yerba buena", "tafi viejo", "tafí viejo", "banda del rio sali",
+    "banda del río salí", "concepcion tucuman", "monteros", "aguilares", "lules"
+]
+
+# Carril Rápido (Auto-Aprobado directo si cumple los 3 factores y viene de fuentes locales clave)
 PALABRAS_CONFIANZA_TOTAL = [
-    "beca ypf", "becas ypf", "beca balseiro", "pasantia utn", "pasantía utn",
-    "utn frt", "copit", "sidetec", "invap", "conae", "fórmula utn", "formula utn"
+    "utn frt", "utn-frt", "facet", "sidetec", "copit", "conicet tucuman",
+    "conicet tucumán", "beca ypf", "becas ypf"
 ]
 
 STOP_WORDS = {
     "de", "la", "que", "el", "en", "y", "a", "los", "del", "se", "las", "por", "un", "para", "con", "no", "una", "su", "al", "lo", "como", "mas", "pero", "sus", "le", "ya", "o", "este", "si", "porque", "esta", "entre", "cuando", "muy", "sin", "sobre", "tambien", "me", "hasta", "hay", "donde", "quien", "desde", "nos", "durante", "uno", "ni", "contra", "ese", "eso", "ante", "ellos", "e", "esto", "mi", "antes", "algunos", "unos", "yo", "otro", "otras", "otra", "otros"
 }
 
+def normalizar_texto(texto):
+    """Convierte a minúsculas y quita tildes para comparaciones limpias."""
+    texto = texto.lower()
+    return unicodedata.normalize('NFD', texto).encode('ascii', 'ignore').decode('utf-8')
+
+def contiene_termino_exacto(texto_normalizado, lista_terminos):
+    """Busca coincidencias de palabra completa para evitar falsos positivos (ej: 'ia' en 'provincia')."""
+    for termino in lista_terminos:
+        termino_norm = normalizar_texto(termino)
+        patron = r'\b' + re.escape(termino_norm) + r'\b'
+        if re.search(patron, texto_normalizado):
+            return True
+    return False
+
 def limpiar_coletillas_titulo(titulo):
-    """Elimina el nombre del medio al final del título (ej: 'Noticia - Diario X' -> 'Noticia')."""
+    """Elimina el nombre del medio al final del título (ej: 'Noticia - La Gaceta' -> 'Noticia')."""
     titulo_limpio = re.sub(r'\s*[\-\|]\s*.*$', '', titulo)
     return titulo_limpio.strip()
 
@@ -67,13 +103,11 @@ def limpiar_url(url):
     return urlunparse((parsed.scheme, parsed.netloc, parsed.path, '', '', ''))
 
 def extraer_palabras_clave(texto):
-    texto = texto.lower()
-    texto = unicodedata.normalize('NFD', texto).encode('ascii', 'ignore').decode('utf-8')
-    palabras = re.findall(r'\b[a-z0-9]{3,}\b', texto)
+    texto_norm = normalizar_texto(texto)
+    palabras = re.findall(r'\b[a-z0-9]{3,}\b', texto_norm)
     return set(p for p in palabras if p not in STOP_WORDS)
 
 def es_duplicado_por_similitud(titulo_nuevo, lista_titulos_existentes):
-    # Compara usando el título sin coletillas de medios
     t_nuevo_limpio = limpiar_coletillas_titulo(titulo_nuevo)
     kw_nuevo = extraer_palabras_clave(t_nuevo_limpio)
     
@@ -89,22 +123,21 @@ def es_duplicado_por_similitud(titulo_nuevo, lista_titulos_existentes):
         interseccion = kw_nuevo.intersection(kw_existente)
         similitud = len(interseccion) / max(len(kw_nuevo), len(kw_existente))
         
-        # Umbral ajustado al 55% para atrapar paráfrasis
         if similitud >= 0.55:
             return True
     return False
 
 def categorizar_noticia(titulo, resumen):
-    texto = f"{titulo} {resumen}".lower()
+    texto = normalizar_texto(f"{titulo} {resumen}")
     if any(k in texto for k in ["beca", "becas", "posgrado", "financiamiento", "movilidad"]):
         return "🎓 BECAS Y POSGRADOS"
-    elif any(k in texto for k in ["pasantia", "pasantía", "pps", "practica supervisada", "práctica supervisada", "jovenes profesionales"]):
+    elif any(k in texto for k in ["pasantia", "pps", "practica supervisada", "jovenes profesionales"]):
         return "💼 PASANTÍAS Y PPS"
-    elif any(k in texto for k in ["taller", "curso", "capacitacion", "capacitación", "certificacion", "certificación"]):
+    elif any(k in texto for k in ["taller", "curso", "capacitacion", "certificacion", "bootcamp"]):
         return "🛠️ TALLERES Y CURSOS"
-    elif any(k in texto for k in ["concurso", "hackathon", "competencia", "ideaton", "ideatón", "desafío"]):
+    elif any(k in texto for k in ["concurso", "hackathon", "competencia", "ideaton", "desafio"]):
         return "🏆 CONCURSOS Y HACKATHONS"
-    elif any(k in texto for k in ["congreso", "jornada", "jornadas", "simposio", "call for papers", "seminario"]):
+    elif any(k in texto for k in ["congreso", "jornada", "jornadas", "simposio", "seminario"]):
         return "🏛️ CONGRESOS Y EVENTOS"
     return "📌 NOVEDADES GENERALES"
 
@@ -121,19 +154,22 @@ def extraer_fecha_limite(texto):
     return "Sin fecha detectada"
 
 def es_noticia_valida(titulo, resumen):
-    texto = f"{titulo} {resumen}".lower()
+    texto_norm = normalizar_texto(f"{titulo} {resumen}")
     
-    if any(p in texto for p in PALABRAS_EXCLUIDAS):
+    # 1. Descarte por ruido o temas ajenos
+    if any(normalizar_texto(p) in texto_norm for p in PALABRAS_EXCLUIDAS):
         return False
         
-    tiene_oportunidad = any(p in texto for p in PALABRAS_OPORTUNIDAD)
-    tiene_area = any(p in texto for p in PALABRAS_AREA)
+    # 2. TRIPLE FACTOR OBLIGATORIO: Oportunidad + Área Técnica + Tucumán
+    tiene_oportunidad = contiene_termino_exacto(texto_norm, PALABRAS_OPORTUNIDAD)
+    tiene_area = contiene_termino_exacto(texto_norm, PALABRAS_AREA)
+    es_tucuman = contiene_termino_exacto(texto_norm, PALABRAS_TUCUMAN)
     
-    return tiene_oportunidad and tiene_area
+    return tiene_oportunidad and tiene_area and es_tucuman
 
 def es_confianza_total(titulo, resumen):
-    texto = f"{titulo} {resumen}".lower()
-    return any(k in texto for k in PALABRAS_CONFIANZA_TOTAL)
+    texto_norm = normalizar_texto(f"{titulo} {resumen}")
+    return contiene_termino_exacto(texto_norm, PALABRAS_CONFIANZA_TOTAL)
 
 def armar_borrador_whatsapp(titulo, resumen, link, categoria):
     titulo_limpio = limpiar_coletillas_titulo(titulo)
@@ -143,7 +179,7 @@ def armar_borrador_whatsapp(titulo, resumen, link, categoria):
         f"📝 {resumen}\n\n"
         f"🔗 {link}\n\n"
         f"--\n"
-        f"_Gestión Estudiantil / Novedades UTN_"
+        f"_Gestión Estudiantil / Novedades UTN FRT_"
     )
 
 def obtener_historial_desde_sheets():
