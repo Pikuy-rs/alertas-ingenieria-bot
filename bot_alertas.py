@@ -13,43 +13,66 @@ SHEETS_URL = os.environ.get("GOOGLE_SHEETS_WEBAPP_URL")
 
 RSS_FILE = "rss_urls.txt"
 
-# Exclusiones de contexto e industrias no relevantes
+# Exclusiones de contexto, noticias macroeconómicas, sindicales y ruido
 PALABRAS_EXCLUIDAS = [
     "fotograf", "deport", "fútbol", "futbol", "poesía", "poesia", "teatro",
     "salud mental", "accidente", "policial", "violencia", "música", "musica",
     "literario", "escultura", "danza", "legislativo", "carnaval", "farándula",
     "espectáculo", "vecinal", "tránsito", "homicidio", "robo", "hurto",
     "curso legal", "en el curso de", "tomó su curso", "curso de las acciones",
-    "bolsa de comercio", "dólar", "dolar", "cripto", "bitcoin", "horóscopo"
+    "bolsa de comercio", "dólar", "dolar", "cripto", "bitcoin", "horóscopo",
+    "tasa de desempleo", "desocupación", "desocupacion", "paritarias",
+    "paro docente", "paro general", "huelga", "despidos", "indec", "plan social"
 ]
 
-# FACTOR 1: Debe ser explícitamente una oportunidad o actividad formativa/laboral
+# FACTOR 1: Oportunidad académica, formativa o búsqueda laboral concreta
 PALABRAS_OPORTUNIDAD = [
-    "beca", "becas", "pasantia", "pasantía", "pps", "practica supervisada",
-    "práctica supervisada", "convocatoria", "inscripcion", "inscripción",
+    # Becas y formación
+    "beca", "becas", "convocatoria", "inscripcion", "inscripción",
     "taller", "curso", "capacitacion", "capacitación", "hackathon", "concurso",
-    "busqueda laboral", "búsqueda laboral", "jovenes profesionales",
-    "jóvenes profesionales", "bootcamp", "seminario", "webinar",
-    "financiamiento", "subsidio", "movilidad", "proyecto de investigacion",
-    "proyecto de investigación", "incubadora", "aceleradora"
+    "bootcamp", "seminario", "webinar", "financiamiento", "subsidio", "movilidad",
+    "proyecto de investigacion", "proyecto de investigación", "incubadora", "aceleradora",
+    # Empleo, pasantías y reclutamiento
+    "empleo", "empleos", "pasantia", "pasantía", "pps", "practica supervisada",
+    "práctica supervisada", "busqueda laboral", "búsqueda laboral",
+    "oferta laboral", "ofertas laborales", "vacante", "vacantes",
+    "se busca", "incorporara", "incorporará", "seleccionara", "seleccionará",
+    "cv", "curriculum", "currículum", "postularse", "postulacion", "postulación",
+    "jovenes profesionales", "jóvenes profesionales", "personal tecnico", "personal técnico"
 ]
 
-# FACTOR 2: Nicho técnico (IA, Electrónica, Sistemas Embebidos, Hardware, Software)
+# FACTOR 2: Especialidades (Ingenierías, Tecnicaturas, IA, Industria, Seguridad e Higiene)
 PALABRAS_AREA = [
-    # Inteligencia Artificial y Datos
-    "ia", "inteligencia artificial", "machine learning", "deep learning",
-    "vision artificial", "visión artificial", "redes neuronales", "llm",
-    "ciencia de datos", "analisis de datos", "análisis de datos",
-    # Electrónica y Sistemas Embebidos
+    # Perfiles generales
+    "ingenieria", "ingeniería", "ingeniero", "ingeniera", "ingenieros",
+    "tecnico", "técnico", "tecnica", "técnica", "tecnicos", "técnicos", "tecnicatura",
+    # Electrónica, Embebidos, Mecatrónica y Automatización
     "electronica", "electrónica", "sistemas embebidos", "embebido", "embebidos",
     "microcontrolador", "microcontroladores", "esp32", "stm32", "arduino",
     "fpga", "pcb", "firmware", "vhdl", "verilog", "hardware", "iot",
-    "internet de las cosas", "automatizacion", "automatización", "robotica",
-    "robótica", "telecomunicaciones", "sensores", "instrumentacion",
-    "instrumentación", "energia renovable", "energías renovables",
-    # Ingeniería y Desarrollo
-    "ingenieria", "ingeniería", "sistemas", "software", "programacion",
-    "programación", "ciberseguridad"
+    "internet de las cosas", "mecatronica", "mecatrónica", "automatizacion",
+    "automatización", "robotica", "robótica", "telecomunicaciones", "sensores",
+    "instrumentacion", "instrumentación",
+    # Mecánica, Eléctrica y Mantenimiento Industrial
+    "mecanica", "mecánica", "electromecanica", "electromecánica",
+    "electrica", "eléctrica", "electricista", "alta tension", "alta tensión",
+    "media tension", "media tensión", "tableros electricos", "tableros eléctricos",
+    "mantenimiento", "mantenimiento industrial", "planta industrial",
+    "energia renovable", "energías renovables",
+    # Civil y Construcción
+    "civil", "obra civil", "construccion", "construcción", "maestro mayor de obras",
+    "hidraulica", "hidráulica", "vial", "estructuras", "topografia", "topografía",
+    # Sistemas de la Información, Software e IA
+    "sistemas", "sistemas de informacion", "sistemas de información",
+    "informatica", "informática", "software", "programacion", "programación",
+    "programador", "programadora", "desarrollador", "desarrolladora", "developer",
+    "fullstack", "backend", "frontend", "devops", "ciberseguridad", "it",
+    "ia", "inteligencia artificial", "machine learning", "deep learning",
+    "vision artificial", "visión artificial", "redes neuronales", "llm",
+    "ciencia de datos", "analisis de datos", "análisis de datos",
+    # Seguridad e Higiene
+    "seguridad e higiene", "higiene y seguridad", "prevencion de riesgos",
+    "prevención de riesgos", "seguridad laboral", "seguridad industrial"
 ]
 
 # FACTOR 3: Candado Geográfico Estricto (Solo Tucumán e instituciones locales)
@@ -57,11 +80,12 @@ PALABRAS_TUCUMAN = [
     "tucuman", "tucumán", "san miguel de tucuman", "san miguel de tucumán",
     "utn frt", "utn-frt", "facultad regional tucuman", "facultad regional tucumán",
     "unt", "universidad nacional de tucuman", "universidad nacional de tucumán",
-    "facet", "unsta", "uspt", "copit", "sidetec",
+    "facet", "unsta", "uspt", "copit", "sidetec", "colegio de ingenieros",
     "conicet tucuman", "conicet tucumán", "cerela", "proimi", "insibio",
     "inbiofal", "inta famailla", "inta famaillá", "eeaoc",
     "yerba buena", "tafi viejo", "tafí viejo", "banda del rio sali",
-    "banda del río salí", "concepcion tucuman", "monteros", "aguilares", "lules"
+    "banda del río salí", "concepcion tucuman", "monteros", "aguilares", "lules",
+    "alderetes", "bella vista tucuman", "parque industrial tucuman"
 ]
 
 # Carril Rápido (Auto-Aprobado directo si cumple los 3 factores y viene de fuentes locales clave)
@@ -80,7 +104,7 @@ def normalizar_texto(texto):
     return unicodedata.normalize('NFD', texto).encode('ascii', 'ignore').decode('utf-8')
 
 def contiene_termino_exacto(texto_normalizado, lista_terminos):
-    """Busca coincidencias de palabra completa para evitar falsos positivos (ej: 'ia' en 'provincia')."""
+    """Busca coincidencias de palabra/frase completa para evitar falsos positivos."""
     for termino in lista_terminos:
         termino_norm = normalizar_texto(termino)
         patron = r'\b' + re.escape(termino_norm) + r'\b'
@@ -129,10 +153,12 @@ def es_duplicado_por_similitud(titulo_nuevo, lista_titulos_existentes):
 
 def categorizar_noticia(titulo, resumen):
     texto = normalizar_texto(f"{titulo} {resumen}")
-    if any(k in texto for k in ["beca", "becas", "posgrado", "financiamiento", "movilidad"]):
-        return "🎓 BECAS Y POSGRADOS"
-    elif any(k in texto for k in ["pasantia", "pps", "practica supervisada", "jovenes profesionales"]):
+    if any(k in texto for k in ["pasantia", "pps", "practica supervisada"]):
         return "💼 PASANTÍAS Y PPS"
+    elif any(k in texto for k in ["empleo", "busqueda laboral", "oferta laboral", "vacante", "se busca", "cv", "curriculum", "jovenes profesionales", "personal tecnico"]):
+        return "🔍 EMPLEOS Y BÚSQUEDAS"
+    elif any(k in texto for k in ["beca", "becas", "posgrado", "financiamiento", "movilidad"]):
+        return "🎓 BECAS Y POSGRADOS"
     elif any(k in texto for k in ["taller", "curso", "capacitacion", "certificacion", "bootcamp"]):
         return "🛠️ TALLERES Y CURSOS"
     elif any(k in texto for k in ["concurso", "hackathon", "competencia", "ideaton", "desafio"]):
@@ -156,11 +182,11 @@ def extraer_fecha_limite(texto):
 def es_noticia_valida(titulo, resumen):
     texto_norm = normalizar_texto(f"{titulo} {resumen}")
     
-    # 1. Descarte por ruido o temas ajenos
+    # 1. Descarte por ruido, noticias sindicales o macroeconómicas
     if any(normalizar_texto(p) in texto_norm for p in PALABRAS_EXCLUIDAS):
         return False
         
-    # 2. TRIPLE FACTOR OBLIGATORIO: Oportunidad + Área Técnica + Tucumán
+    # 2. TRIPLE FACTOR OBLIGATORIO: Oportunidad/Empleo + Especialidad Técnica + Tucumán
     tiene_oportunidad = contiene_termino_exacto(texto_norm, PALABRAS_OPORTUNIDAD)
     tiene_area = contiene_termino_exacto(texto_norm, PALABRAS_AREA)
     es_tucuman = contiene_termino_exacto(texto_norm, PALABRAS_TUCUMAN)
